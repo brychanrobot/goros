@@ -130,6 +130,13 @@ func (ros *Ros) GetTopics() []string {
 	return topics
 }
 
+func (ros *Ros) GetServices() []string {
+	response := ros.getServiceResponse(newServiceCall("/rosapi/services"))
+	var services []string
+	json.Unmarshal(response.Values["services"], &services)
+	return services
+}
+
 func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
 	//topicResponse := ros.getTopicResponse(topic)
 	topic := NewTopic(topicName)

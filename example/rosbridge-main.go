@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"log"
 
 	"github.com/brychanrobot/goros"
@@ -19,10 +20,14 @@ type Track struct {
 }
 
 func main() {
-	ros := goros.NewRos("ws://192.168.27.20:9090")
+	flag.Parse()
+	ros := goros.NewRos("ws://192.168.27.201:9090")
 
 	topics := ros.GetTopics()
 	log.Println(topics)
+
+	services := ros.GetServices()
+	log.Println(services)
 
 	ros.Subscribe("/visual_mtt/rransac_tracks", func(msg *json.RawMessage) {
 		var uav Uav
