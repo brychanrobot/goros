@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	typeMap = map[string]reflect.Type{
+	typeMap = map[string]interface{}{
 		"bool":    reflect.TypeOf((*bool)(nil)).Elem(),
 		"float32": reflect.TypeOf((*float32)(nil)).Elem(),
 		"float64": reflect.TypeOf((*float64)(nil)).Elem(),
@@ -32,13 +32,26 @@ var (
 		"uint64":  reflect.TypeOf((*uint32)(nil)).Elem(),
 		"int32":   reflect.TypeOf((*int32)(nil)).Elem(),
 		"int64":   reflect.TypeOf((*int64)(nil)).Elem(),
+		"uint8":   reflect.TypeOf((*byte)(nil)).Elem(),
+		"time":    reflect.TypeOf((*RosTime)(nil)).Elem(),
+		"string":  reflect.TypeOf((*string)(nil)).Elem(),
 	}
 )
+
+type CustomMessage map[string]interface{}
+type CustomMessageSlice struct {
+	CustomMessage
+}
+
+type RosTime struct {
+	Secs  int32
+	NSecs int32
+}
 
 func parseSubMessageDefinition(subMessage string, superMessageTypeString string) {
 	commentRegexp, _ := regexp.Compile("\\s*#[^\n]*")
 	subMessageWithoutComments := commentRegexp.ReplaceAllString(subMessage, "")
-	subMessageMap := make(map[string]reflect.Type)
+	subMessageMap := make(CustomMessage)
 	var subMessageTypeString string
 	for _, line := range strings.Split(subMessageWithoutComments, "\n") {
 		if len(line) != 0 {
@@ -51,16 +64,17 @@ func parseSubMessageDefinition(subMessage string, superMessageTypeString string)
 			typeString := split[0]
 			fieldName := split[1]
 
-			var fieldType reflect.Type
 			if strings.HasSuffix(typeString, "[]") {
 				elementType := typeMap[typeString[:len(typeString)-2]]
-				fieldType = reflect.SliceOf(elementType)
+				switch elementType.(type) {
+				case reflect.Type:
+					subMessageMap[fieldName] = reflect.SliceOf(elementType.(reflect.Type))
+				case CustomMessage:
+					subMessageMap[fieldName] = elementType
+				}
 			} else {
-				fieldType = typeMap[typeString]
+				subMessageMap[fieldName] = typeMap[typeString]
 			}
-
-			subMessageMap[fieldName] = fieldType
-			//fmt.Println(line)
 		}
 	}
 
@@ -69,8 +83,10 @@ func parseSubMessageDefinition(subMessage string, superMessageTypeString string)
 		subMessageTypeString = superMessageTypeString
 	}
 
-	//typeString := strings.Split(subMessageTypeString, " ")[1]
-	//typeMap[typeString] = subMessageMap
+	typeString := strings.Split(subMessageTypeString, "/")[1]
+	typeMap[typeString] = subMessageMap
+
+	log.Println(subMessageMap)
 }
 
 func parseMessageDefinition(dataMap map[string]interface{}) {
@@ -87,8 +103,8 @@ func parseMessageDefinition(dataMap map[string]interface{}) {
 		}
 	*/
 	for _, subMessage := range subMessages {
-		fmt.Println(subMessage)
-		//defer parseSubMessageDefinition(subMessage, dataMap["type"].(string)) //log.Println(subMessage)
+		defer fmt.Println(subMessage)
+		defer parseSubMessageDefinition(subMessage, dataMap["type"].(string)) //log.Println(subMessage)
 	}
 }
 
@@ -120,11 +136,14 @@ func parseRecordHeader(buffer []byte) map[string]interface{} {
 			binary.Read(reader, binary.LittleEndian, &value)
 			valueMap[fieldName] = value
 		case "time", "start_time", "end_time", "chunk_pos":
-			var secs int32
+			/*var secs int32
 			var nsecs int32
 			binary.Read(reader, binary.LittleEndian, &secs)
 			binary.Read(reader, binary.LittleEndian, &nsecs)
-			valueMap[fieldName] = time.Unix(int64(secs), int64(nsecs))
+			valueMap[fieldName] = time.Unix(int64(secs), int64(nsecs))*/
+			var timestamp RosTime
+			binary.Read(reader, binary.LittleEndian, &timestamp)
+			valueMap[fieldName] = time.Unix(int64(timestamp.Secs), int64(timestamp.NSecs))
 		case "compression", "topic":
 			value := make([]byte, valueLength)
 			reader.Read(value)
