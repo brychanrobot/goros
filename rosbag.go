@@ -8,7 +8,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"reflect"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -19,6 +21,56 @@ const (
 	ChunkInfo        = 0x06
 	ConnectionRecord = 0x07
 )
+
+var (
+	typeMap = map[string]reflect.Type{
+		"bool":    reflect.TypeOf((*bool)(nil)).Elem(),
+		"float32": reflect.TypeOf((*float32)(nil)).Elem(),
+		"float64": reflect.TypeOf((*float64)(nil)).Elem(),
+		"uint32":  reflect.TypeOf((*uint32)(nil)).Elem(),
+		"uint64":  reflect.TypeOf((*uint32)(nil)).Elem(),
+		"int32":   reflect.TypeOf((*int32)(nil)).Elem(),
+		"int64":   reflect.TypeOf((*int64)(nil)).Elem(),
+	}
+)
+
+func parseSubMessageDefinition(subMessage string, superMessageTypeString string) {
+	commentRegexp, _ := regexp.Compile("\\s*#[^\n]*")
+	subMessageWithoutComments := commentRegexp.ReplaceAllString(subMessage, "")
+	subMessageMap := make(map[string]reflect.Type)
+	var subMessageTypeString string
+	for _, line := range strings.Split(subMessageWithoutComments, "\n") {
+		if len(line) != 0 {
+			if strings.HasPrefix(line, "MSG") {
+				subMessageTypeString = strings.TrimPrefix(line, "MSG: ")
+				continue
+			}
+
+			split := strings.Split(line, " ")
+			typeString := split[0]
+			fieldName := split[1]
+
+			var fieldType reflect.Type
+			if strings.HasSuffix(typeString, "[]") {
+				elementType := typeMap[typeString[:len(typeString)-2]]
+				fieldType = reflect.SliceOf(elementType)
+			} else {
+				fieldType = typeMap[typeString]
+			}
+
+			subMessageMap[fieldName] = fieldType
+			//fmt.Println(line)
+		}
+	}
+
+	//return subMessageTypeString, subMessageMap
+	if len(subMessageTypeString) == 0 {
+		subMessageTypeString = superMessageTypeString
+	}
+
+	typeString := strings.Split(subMessageTypeString)[1]
+	typeMap[typeString] = subMessageMap
+}
 
 func parseMessageDefinition(dataMap map[string]interface{}) {
 	//fmt.Println(dataMap["message_definition"])
@@ -34,7 +86,7 @@ func parseMessageDefinition(dataMap map[string]interface{}) {
 		}
 	*/
 	for _, subMessage := range subMessages {
-		defer log.Println(subMessage)
+		defer parseSubMessageDefinition(subMessage, dataMap["type"].(string)) //log.Println(subMessage)
 	}
 }
 
