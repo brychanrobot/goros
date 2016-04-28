@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 )
 
 const (
@@ -18,6 +19,24 @@ const (
 	ChunkInfo        = 0x06
 	ConnectionRecord = 0x07
 )
+
+func parseMessageDefinition(dataMap map[string]interface{}) {
+	//fmt.Println(dataMap["message_definition"])
+
+	messageSplitterRegex, _ := regexp.Compile("[=]+\n")
+
+	subMessages := messageSplitterRegex.Split(dataMap["message_definition"].(string), -1)
+
+	//fmt.Println(subMessages)
+	/*
+		for _, line := range strings.Split(dataMap["message_definition"].(string), "\n") {
+			fmt.Println(line)
+		}
+	*/
+	for _, subMessage := range subMessages {
+		defer log.Println(subMessage)
+	}
+}
 
 func parseRecordHeader(buffer []byte) map[string]interface{} {
 	//log.Println(string(buffer))
@@ -71,7 +90,7 @@ func parseRecord(reader *bufio.Reader) error {
 	buffer := make([]byte, int(headerLength))
 	reader.Read(buffer)
 	valueMap := parseRecordHeader(buffer)
-	log.Println(valueMap)
+	//fmt.Println(valueMap)
 
 	var dataLength uint32
 	binary.Read(reader, binary.LittleEndian, &dataLength)
@@ -102,7 +121,8 @@ func parseRecord(reader *bufio.Reader) error {
 	case ConnectionRecord:
 		//log.Println(string(dataBuffer))
 		dataMap := parseRecordHeader(dataBuffer)
-		log.Println(dataMap)
+		//log.Println(dataMap)
+		parseMessageDefinition(dataMap)
 	case MessageData:
 	case IndexData:
 	case ChunkInfo:
