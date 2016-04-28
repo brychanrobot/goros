@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const (
@@ -68,8 +69,8 @@ func parseSubMessageDefinition(subMessage string, superMessageTypeString string)
 		subMessageTypeString = superMessageTypeString
 	}
 
-	typeString := strings.Split(subMessageTypeString)[1]
-	typeMap[typeString] = subMessageMap
+	//typeString := strings.Split(subMessageTypeString, " ")[1]
+	//typeMap[typeString] = subMessageMap
 }
 
 func parseMessageDefinition(dataMap map[string]interface{}) {
@@ -86,7 +87,8 @@ func parseMessageDefinition(dataMap map[string]interface{}) {
 		}
 	*/
 	for _, subMessage := range subMessages {
-		defer parseSubMessageDefinition(subMessage, dataMap["type"].(string)) //log.Println(subMessage)
+		fmt.Println(subMessage)
+		//defer parseSubMessageDefinition(subMessage, dataMap["type"].(string)) //log.Println(subMessage)
 	}
 }
 
@@ -113,10 +115,16 @@ func parseRecordHeader(buffer []byte) map[string]interface{} {
 			var value uint32
 			binary.Read(reader, binary.LittleEndian, &value)
 			valueMap[fieldName] = value
-		case "index_pos", "time", "start_time", "end_time", "chunk_pos":
+		case "index_pos":
 			var value uint64
 			binary.Read(reader, binary.LittleEndian, &value)
 			valueMap[fieldName] = value
+		case "time", "start_time", "end_time", "chunk_pos":
+			var secs int32
+			var nsecs int32
+			binary.Read(reader, binary.LittleEndian, &secs)
+			binary.Read(reader, binary.LittleEndian, &nsecs)
+			valueMap[fieldName] = time.Unix(int64(secs), int64(nsecs))
 		case "compression", "topic":
 			value := make([]byte, valueLength)
 			reader.Read(value)
@@ -142,7 +150,7 @@ func parseRecord(reader *bufio.Reader) error {
 	buffer := make([]byte, int(headerLength))
 	reader.Read(buffer)
 	valueMap := parseRecordHeader(buffer)
-	//fmt.Println(valueMap)
+	fmt.Println(valueMap)
 
 	var dataLength uint32
 	binary.Read(reader, binary.LittleEndian, &dataLength)
