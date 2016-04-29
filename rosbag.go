@@ -113,12 +113,11 @@ func parseRecordHeader(buffer []byte) map[string]interface{} {
 	//log.Println(string(buffer))
 	reader := bufio.NewReader(bytes.NewReader(buffer))
 	//log.Println(reader.Buffered())
-
 	valueMap := make(map[string]interface{})
 
 	var fieldLength uint32
 	for binary.Read(reader, binary.LittleEndian, &fieldLength) == nil {
-		fieldName, _ := reader.ReadString('=')
+		fieldName, err := reader.ReadString('=')
 		fieldName = fieldName[:len(fieldName)-1]
 		//log.Println(fieldName)
 		//reader.Discard(int(fieldLength) - len(fieldName))
@@ -132,30 +131,34 @@ func parseRecordHeader(buffer []byte) map[string]interface{} {
 			valueMap[fieldName] = value
 		case "conn", "size", "conn_count", "chunk_count", "count", "ver":
 			var value uint32
-			binary.Read(reader, binary.LittleEndian, &value)
+			err = binary.Read(reader, binary.LittleEndian, &value)
 			valueMap[fieldName] = value
 		case "index_pos":
 			var value uint64
-			binary.Read(reader, binary.LittleEndian, &value)
+			err = binary.Read(reader, binary.LittleEndian, &value)
 			valueMap[fieldName] = value
 		case "time", "start_time", "end_time", "chunk_pos":
 			var timestamp RosTime
-			binary.Read(reader, binary.LittleEndian, &timestamp)
+			err = binary.Read(reader, binary.LittleEndian, &timestamp)
 			valueMap[fieldName] = time.Unix(int64(timestamp.Secs), int64(timestamp.NSecs))
 		case "compression", "topic", "callerid", "type", "md5sum", "message_definition":
 			value := make([]byte, valueLength)
-			io.ReadFull(reader, value)
+			_, err = io.ReadFull(reader, value)
 			valueMap[fieldName] = string(value)
 		case "latching":
 			value := make([]byte, valueLength)
-			io.ReadFull(reader, value)
+			_, err = io.ReadFull(reader, value)
 			intVal, _ := strconv.Atoi(string(value))
 			valueMap[fieldName] = intVal
 		default:
 			value := make([]byte, valueLength)
-			io.ReadFull(reader, value)
+			_, err = io.ReadFull(reader, value)
 			valueMap[fieldName] = string(value)
 			log.Printf("Congratulations! I don't know what to do with %s", fieldName)
+		}
+
+		if err != nil {
+			panic(err)
 		}
 	}
 
@@ -168,11 +171,14 @@ func parseRecord(reader *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
+	if headerLength == 0 {
+		panic(fmt.Sprintf("cannot read header of size %d", headerLength))
+	}
 	//log.Println(headerLength)
 	buffer := make([]byte, int(headerLength))
 	io.ReadFull(reader, buffer)
 	valueMap := parseRecordHeader(buffer)
-	//fmt.Println(valueMap)
+	fmt.Println(valueMap)
 
 	var dataLength uint32
 	binary.Read(reader, binary.LittleEndian, &dataLength)
@@ -197,25 +203,27 @@ func parseRecord(reader *bufio.Reader) error {
 		log.Println(string(buffer))
 	}
 	*/
-	switch valueMap["op"].(byte) {
-	case BagHeader:
-	case ChunkRecord:
-		chunkReader := bufio.NewReader(bytes.NewReader(dataBuffer))
-		var chunkErr error
-		for chunkErr == nil {
-			chunkErr = parseRecord(chunkReader)
+	/*
+		switch valueMap["op"].(byte) {
+		case BagHeader:
+		case ChunkRecord:
+			chunkReader := bufio.NewReader(bytes.NewReader(dataBuffer))
+			var chunkErr error
+			for chunkErr == nil {
+				chunkErr = parseRecord(chunkReader)
+			}
+		case ConnectionRecord:
+			fmt.Println(valueMap)
+			//log.Println(string(dataBuffer))
+			dataMap := parseRecordHeader(dataBuffer)
+			//log.Println(dataMap)
+			parseMessageDefinition(dataMap)
+		case MessageData:
+			//fmt.Println(valueMap)
+		case IndexData:
+		case ChunkInfo:
 		}
-	case ConnectionRecord:
-		fmt.Println(valueMap)
-		//log.Println(string(dataBuffer))
-		dataMap := parseRecordHeader(dataBuffer)
-		//log.Println(dataMap)
-		parseMessageDefinition(dataMap)
-	case MessageData:
-		//fmt.Println(valueMap)
-	case IndexData:
-	case ChunkInfo:
-	}
+	*/
 
 	return nil
 
