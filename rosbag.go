@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -86,11 +87,11 @@ func parseSubMessageDefinition(subMessage string, superMessageTypeString string)
 	typeString := strings.Split(subMessageTypeString, "/")[1]
 	typeMap[typeString] = subMessageMap
 
-	log.Println(subMessageMap)
+	log.Printf("%s, %s", typeString, subMessageMap)
 }
 
 func parseMessageDefinition(dataMap map[string]interface{}) {
-	//fmt.Println(dataMap["message_definition"])
+	//fmt.Println(dataMap)
 
 	messageSplitterRegex, _ := regexp.Compile("[=]+\n")
 
@@ -103,7 +104,7 @@ func parseMessageDefinition(dataMap map[string]interface{}) {
 		}
 	*/
 	for _, subMessage := range subMessages {
-		defer fmt.Println(subMessage)
+		//defer fmt.Println(subMessage)
 		defer parseSubMessageDefinition(subMessage, dataMap["type"].(string)) //log.Println(subMessage)
 	}
 }
@@ -125,6 +126,8 @@ func parseRecordHeader(buffer []byte) map[string]interface{} {
 
 		switch fieldName {
 		case "op":
+			//var value byte
+			//binary.Read(reader, binary.LittleEndian, value)
 			value, _ := reader.ReadByte()
 			valueMap[fieldName] = value
 		case "conn", "size", "conn_count", "chunk_count", "count", "ver":
@@ -136,21 +139,21 @@ func parseRecordHeader(buffer []byte) map[string]interface{} {
 			binary.Read(reader, binary.LittleEndian, &value)
 			valueMap[fieldName] = value
 		case "time", "start_time", "end_time", "chunk_pos":
-			/*var secs int32
-			var nsecs int32
-			binary.Read(reader, binary.LittleEndian, &secs)
-			binary.Read(reader, binary.LittleEndian, &nsecs)
-			valueMap[fieldName] = time.Unix(int64(secs), int64(nsecs))*/
 			var timestamp RosTime
 			binary.Read(reader, binary.LittleEndian, &timestamp)
 			valueMap[fieldName] = time.Unix(int64(timestamp.Secs), int64(timestamp.NSecs))
-		case "compression", "topic":
+		case "compression", "topic", "callerid", "type", "md5sum", "message_definition":
 			value := make([]byte, valueLength)
-			reader.Read(value)
+			io.ReadFull(reader, value)
 			valueMap[fieldName] = string(value)
+		case "latching":
+			value := make([]byte, valueLength)
+			io.ReadFull(reader, value)
+			intVal, _ := strconv.Atoi(string(value))
+			valueMap[fieldName] = intVal
 		default:
 			value := make([]byte, valueLength)
-			reader.Read(value)
+			io.ReadFull(reader, value)
 			valueMap[fieldName] = string(value)
 			log.Printf("Congratulations! I don't know what to do with %s", fieldName)
 		}
@@ -167,21 +170,26 @@ func parseRecord(reader *bufio.Reader) error {
 	}
 	//log.Println(headerLength)
 	buffer := make([]byte, int(headerLength))
-	reader.Read(buffer)
+	io.ReadFull(reader, buffer)
 	valueMap := parseRecordHeader(buffer)
-	fmt.Println(valueMap)
+	//fmt.Println(valueMap)
 
 	var dataLength uint32
 	binary.Read(reader, binary.LittleEndian, &dataLength)
 	//log.Println(dataLength)
 	//if skip {
 	//reader.Discard(int(dataLength))
-	dataBuffer := make([]byte, int(dataLength))
-	bytesRead, _ := io.ReadFull(reader, dataBuffer)
-	//log.Println(bytesRead)
+	var dataBuffer []byte
+	if valueMap["op"] != MessageData {
+		dataBuffer = make([]byte, int(dataLength))
+		bytesRead, _ := io.ReadFull(reader, dataBuffer)
+		//log.Println(bytesRead)
 
-	if bytesRead != int(dataLength) {
-		panic(fmt.Sprintf("expected %d bytes, got %d", dataLength, bytesRead))
+		if bytesRead != int(dataLength) {
+			panic(fmt.Sprintf("expected %d bytes, got %d", dataLength, bytesRead))
+		}
+	} else {
+		reader.Discard(int(dataLength))
 	}
 	/*} else {
 		buffer := make([]byte, int(dataLength))
@@ -192,17 +200,19 @@ func parseRecord(reader *bufio.Reader) error {
 	switch valueMap["op"].(byte) {
 	case BagHeader:
 	case ChunkRecord:
-		chunkReader := bufio.NewReaderSize(bytes.NewReader(dataBuffer), 8000000)
+		chunkReader := bufio.NewReader(bytes.NewReader(dataBuffer))
 		var chunkErr error
 		for chunkErr == nil {
 			chunkErr = parseRecord(chunkReader)
 		}
 	case ConnectionRecord:
+		fmt.Println(valueMap)
 		//log.Println(string(dataBuffer))
 		dataMap := parseRecordHeader(dataBuffer)
 		//log.Println(dataMap)
 		parseMessageDefinition(dataMap)
 	case MessageData:
+		//fmt.Println(valueMap)
 	case IndexData:
 	case ChunkInfo:
 	}
@@ -219,7 +229,7 @@ func ParseRosbag(path string) {
 	}
 	defer file.Close()
 
-	reader := bufio.NewReaderSize(file, 8000000)
+	reader := bufio.NewReader(file)
 
 	line, _ := reader.ReadString('\n')
 	log.Print(line)
